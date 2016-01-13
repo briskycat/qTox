@@ -56,8 +56,6 @@
 #include "audiofilterer.h"
 #endif
 
-Audio* Audio::instance{nullptr};
-
 /**
 @class AudioPlayer
 
@@ -267,16 +265,12 @@ void AudioMeterListener::doListen()
 }
 
 /**
-Returns the singleton's instance. Will construct on first call.
+Returns the singleton instance.
 */
 Audio& Audio::getInstance()
 {
-    if (!instance)
-    {
-        instance = new Audio();
-        instance->startAudioThread();
-    }
-    return *instance;
+    static Audio instance;
+    return instance;
 }
 
 AudioMeterListener* Audio::createAudioMeterListener() const
@@ -290,25 +284,17 @@ AudioMeterListener* Audio::createAudioMeterListener() const
 Audio::Audio()
     : d(new AudioPrivate)
 {
-}
-
-Audio::~Audio()
-{
-    delete d;
-}
-
-/**
-Start the audio thread for capture and playback.
-*/
-void Audio::startAudioThread()
-{
     moveToThread(d->audioThread);
 
     if (!d->audioThread->isRunning())
         d->audioThread->start();
     else
         qWarning("Audio thread already started -> ignored.");
+}
 
+Audio::~Audio()
+{
+    delete d;
 }
 
 /**
@@ -422,27 +408,14 @@ bool AudioPrivate::initInput(QString inDevDescr)
     const uint16_t frameDuration = AUDIO_FRAME_DURATION;
     const uint32_t chnls = AUDIO_CHANNELS;
     const ALCsizei bufSize = (frameDuration * sampleRate * 4) / 1000 * chnls;
-    if (inDevDescr.isEmpty())
-    {
-        const ALchar *pDeviceList = alcGetString(NULL, ALC_CAPTURE_DEVICE_SPECIFIER);
+    if (inDevDescr.isEmpty()) {
+        const ALchar *pDeviceList = Audio::inDeviceNames();
         if (pDeviceList)
-        {
-            alInDev = alcCaptureOpenDevice(pDeviceList, sampleRate, stereoFlag, bufSize);
-            int len = strlen(pDeviceList);
-#ifdef Q_OS_WIN
-            inDevDescr = QString::fromUtf8(pDeviceList, len);
-#else
-            inDevDescr = QString::fromLocal8Bit(pDeviceList, len);
-#endif
-            Settings::getInstance().setInDev(inDevDescr);
-        }
-        else
-        {
-            alInDev = alcCaptureOpenDevice(nullptr, sampleRate, stereoFlag, bufSize);
-        }
+            inDevDescr = QString::fromUtf8(pDeviceList, strlen(pDeviceList));
     }
-    else
-        alInDev = alcCaptureOpenDevice(inDevDescr.toStdString().c_str(),
+
+    if (!inDevDescr.isEmpty())
+        alInDev = alcCaptureOpenDevice(inDevDescr.toUtf8().constData(),
                                        sampleRate, stereoFlag, bufSize);
 
     // Restart the capture if necessary
@@ -474,32 +447,15 @@ bool AudioPrivate::initOutput(QString outDevDescr)
 
     assert(!alOutDev);
 
-    if (outDevDescr.isEmpty())
-    {
-        // Attempt to default to the first available audio device.
-        const ALchar *pDeviceList;
-        if (alcIsExtensionPresent(NULL, "ALC_ENUMERATE_ALL_EXT") != AL_FALSE)
-            pDeviceList = alcGetString(NULL, ALC_ALL_DEVICES_SPECIFIER);
-        else
-            pDeviceList = alcGetString(NULL, ALC_DEVICE_SPECIFIER);
+    if (outDevDescr.isEmpty()) {
+        // default to the first available audio device.
+        const ALchar *pDeviceList = Audio::outDeviceNames();
         if (pDeviceList)
-        {
-            alOutDev = alcOpenDevice(pDeviceList);
-            int len = strlen(pDeviceList);
-#ifdef Q_OS_WIN
-            outDevDescr = QString::fromUtf8(pDeviceList, len);
-#else
-            outDevDescr = QString::fromLocal8Bit(pDeviceList, len);
-#endif
-            Settings::getInstance().setOutDev(outDevDescr);
-        }
-        else
-        {
-            alOutDev = alcOpenDevice(nullptr);
-        }
+            outDevDescr = QString::fromUtf8(pDeviceList, strlen(pDeviceList));
     }
-    else
-        alOutDev = alcOpenDevice(outDevDescr.toStdString().c_str());
+
+    if (!outDevDescr.isEmpty())
+        alOutDev = alcOpenDevice(outDevDescr.toUtf8().constData());
 
     if (alOutDev)
     {
@@ -571,7 +527,7 @@ The first and last argument are ignored, but allow direct compatibility with tox
 void Audio::playGroupAudioQueued(void*,int group, int peer, const int16_t* data,
                         unsigned samples, uint8_t channels, unsigned sample_rate, void* core)
 {
-    QMetaObject::invokeMethod(instance, "playGroupAudio", Qt::BlockingQueuedConnection,
+    QMetaObject::invokeMethod(&Audio::getInstance(), "playGroupAudio", Qt::BlockingQueuedConnection,
                               Q_ARG(int,group), Q_ARG(int,peer), Q_ARG(const int16_t*,data),
                               Q_ARG(unsigned,samples), Q_ARG(uint8_t,channels), Q_ARG(unsigned,sample_rate));
     emit static_cast<Core*>(core)->groupPeerAudioPlaying(group, peer);

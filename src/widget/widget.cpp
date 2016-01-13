@@ -144,7 +144,9 @@ void Widget::init()
     actionLogout->setIcon(prepareIcon(":/img/others/logout-icon.svg", icon_size, icon_size));
 
     actionQuit = new QAction(this);
+#ifndef Q_OS_OSX
     actionQuit->setMenuRole(QAction::QuitRole);
+#endif
     actionQuit->setIcon(prepareIcon(":/ui/rejectCall/rejectCall.svg", icon_size, icon_size));
     connect(actionQuit, &QAction::triggered, qApp, &QApplication::quit);
 
@@ -770,7 +772,7 @@ void Widget::onIconClick(QSystemTrayIcon::ActivationReason reason)
     }
     else if (reason == QSystemTrayIcon::Unknown)
     {
-        if (isHidden()) 
+        if (isHidden())
             forceShow();
     }
 }
@@ -1080,7 +1082,9 @@ void Widget::onFriendMessageReceived(int friendId, const QString& message, bool 
     QDateTime timestamp = QDateTime::currentDateTime();
     f->getChatForm()->addMessage(f->getToxId(), message, isAction, timestamp, true);
 
-    Nexus::getProfile()->getHistory()->addNewMessage(f->getToxId().publicKey, isAction ? "/me " + f->getDisplayedName() + " " + message : message,
+    Profile* profile = Nexus::getProfile();
+    if (profile->isHistoryEnabled())
+        profile->getHistory()->addNewMessage(f->getToxId().publicKey, isAction ? "/me " + f->getDisplayedName() + " " + message : message,
                                                f->getToxId().publicKey, timestamp, true, f->getDisplayedName());
 
     newFriendMessageAlert(friendId);
